@@ -1,6 +1,7 @@
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader } from './ui/card'
-import { ArrowLeft, Package, BarChart3, UserPlus, Search, Users, UserCheck, FileBarChart } from 'lucide-react'
+import { ArrowLeft, Package, BarChart3, UserPlus, Search, Users, UserCheck, FileBarChart, LogOut } from 'lucide-react'
+import { signOut } from '../utils/supabase/client'
 
 interface MenuScreenProps {
   onNavigateToDonor: () => void
@@ -14,19 +15,24 @@ interface MenuScreenProps {
 }
 
 export function MenuScreen({ onNavigateToDonor, onNavigateToBeneficiary, onNavigateToProduct, onNavigateToStock, onNavigateToSearch, onNavigateToBeneficiarySearch, onNavigateToReports, onBack }: MenuScreenProps) {
+  const handleLogout = async () => {
+    await signOut()
+    onBack()
+  }
   return (
     <Card className="w-full max-w-md mx-auto bg-white shadow-sm border border-gray-200">
       <CardHeader className="text-center pb-6">
         <div className="flex items-center justify-between mb-4">
+          <div className="flex-1" />
           <Button
             variant="ghost"
             size="sm"
-            onClick={onBack}
-            className="p-2"
+            onClick={handleLogout}
+            className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+            title="Sair"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <LogOut className="h-4 w-4" />
           </Button>
-          <div className="flex-1" />
         </div>
         <h1 className="text-xl text-gray-800 mb-6">Sistema de Doação de Roupas para Instituições</h1>
         <h2 className="text-2xl text-gray-800">Menu Principal</h2>

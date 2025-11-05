@@ -5,17 +5,17 @@ import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Card, CardContent, CardHeader } from './ui/card'
 import { ArrowLeft, Search, AlertCircle } from 'lucide-react'
-import type { ClothingItem, Donor } from '../App'
+import { createProduct } from '../utils/api'
+import type { Donor } from '../App'
 
 interface ProductRegistrationProps {
   onBack: () => void
-  onAddClothing: (item: Omit<ClothingItem, 'id' | 'donatedAt'>) => void
   donors: Donor[]
-  getDonorById: (id: string) => Donor | undefined
+  onRefresh: () => void
 }
 
 interface FormErrors {
-  donorId?: string
+  donorCode?: string
   type?: string
   size?: string
   color?: string
@@ -23,17 +23,19 @@ interface FormErrors {
   quantity?: string
 }
 
-export function ProductRegistration({ onBack, onAddClothing, donors, getDonorById }: ProductRegistrationProps) {
+export function ProductRegistration({ onBack, donors, onRefresh }: ProductRegistrationProps) {
   const [formData, setFormData] = useState({
-    donorId: '',
+    donorCode: '',
     type: '',
     size: '',
     color: '',
     quality: '',
-    quantity: ''
+    quantity: '',
+    observations: ''
   })
   const [donorSearch, setDonorSearch] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Função para validar e formatar quantidade (apenas números positivos)
   const formatQuantity = (value: string) => {
@@ -73,8 +75,8 @@ export function ProductRegistration({ onBack, onAddClothing, donors, getDonorByI
     const newErrors: FormErrors = {}
 
     // Validação do doador
-    if (!formData.donorId) {
-      newErrors.donorId = 'Selecione um doador'
+    if (!formData.donorCode) {
+      newErrors.donorCode = 'Selecione um doador'
     }
 
     // Validação do tipo
@@ -115,35 +117,46 @@ export function ProductRegistration({ onBack, onAddClothing, donors, getDonorByI
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) {
       return
     }
 
-    const newItem = {
-      type: formData.type,
-      size: formData.size,
-      color: formData.color,
-      quality: formData.quality,
-      quantity: parseInt(formData.quantity),
-      donorId: formData.donorId
-    }
+    setIsSubmitting(true)
+    try {
+      const response = await createProduct({
+        donorCode: formData.donorCode,
+        type: formData.type,
+        size: formData.size,
+        color: formData.color,
+        quality: formData.quality,
+        quantity: parseInt(formData.quantity),
+        observations: formData.observations
+      })
 
-    onAddClothing(newItem)
-    console.log('Cadastro de roupa:', newItem)
-    alert('Peça de roupa cadastrada com sucesso!')
-    
-    // Reset form
-    setFormData({
-      donorId: '',
-      type: '',
-      size: '',
-      color: '',
-      quality: '',
-      quantity: ''
-    })
-    setDonorSearch('')
-    setErrors({})
+      if (response.success) {
+        alert('Peça de roupa cadastrada com sucesso!')
+        
+        // Reset form
+        setFormData({
+          donorCode: '',
+          type: '',
+          size: '',
+          color: '',
+          quality: '',
+          quantity: '',
+          observations: ''
+        })
+        setDonorSearch('')
+        setErrors({})
+        onRefresh() // Refresh product list
+      }
+    } catch (error: any) {
+      console.error('Erro ao cadastrar roupa:', error)
+      alert(error.message || 'Erro ao cadastrar roupa. Por favor, tente novamente.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const filteredDonors = donors.filter(donor => 
@@ -151,7 +164,7 @@ export function ProductRegistration({ onBack, onAddClothing, donors, getDonorByI
     donor.donorCode.toLowerCase().includes(donorSearch.toLowerCase())
   )
 
-  const selectedDonor = formData.donorId ? getDonorById(formData.donorId) : null
+  const selectedDonor = formData.donorCode ? donors.find(d => d.donorCode === formData.donorCode) : null
 
   const clothingTypes = [
     'Camiseta', 'Camisa', 'Blusa', 'Calça Jeans', 'Calça Social', 'Short', 'Bermuda',
@@ -208,7 +221,7 @@ export function ProductRegistration({ onBack, onAddClothing, donors, getDonorByI
               type="text"
               value={donorSearch}
               onChange={(e) => setDonorSearch(e.target.value)}
-              className={`pl-10 bg-gray-50 border-gray-300 rounded-md ${errors.donorId ? 'border-red-500' : ''}`}
+              className={`pl-10 bg-gray-50 border-gray-300 rounded-md ${errors.donorCode ? 'border-red-500' : ''}`}
               placeholder="Buscar por nome ou código (ex: DOA001)"
             />
           </div>
@@ -224,13 +237,13 @@ export function ProductRegistration({ onBack, onAddClothing, donors, getDonorByI
                   <button
                     key={donor.id}
                     onClick={() => {
-                      setFormData(prev => ({ ...prev, donorId: donor.id }))
+                      setFormData(prev => ({ ...prev, donorCode: donor.donorCode }))
                       setDonorSearch('')
                       // Remove erro de doador quando selecionado
-                      if (errors.donorId) {
+                      if (errors.donorCode) {
                         setErrors(prev => {
                           const newErrors = { ...prev }
-                          delete newErrors.donorId
+                          delete newErrors.donorCode
                           return newErrors
                         })
                       }
@@ -256,10 +269,10 @@ export function ProductRegistration({ onBack, onAddClothing, donors, getDonorByI
             </div>
           )}
           
-          {errors.donorId && (
+          {errors.donorCode && (
             <div className="flex items-center gap-1 text-sm text-red-600">
               <AlertCircle className="h-4 w-4" />
-              {errors.donorId}
+              {errors.donorCode}
             </div>
           )}
         </div>
@@ -370,9 +383,10 @@ export function ProductRegistration({ onBack, onAddClothing, donors, getDonorByI
         
         <Button 
           onClick={handleSubmit}
+          disabled={isSubmitting}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-md h-12"
         >
-          Cadastrar Roupa
+          {isSubmitting ? 'Cadastrando...' : 'Cadastrar Roupa'}
         </Button>
       </CardContent>
     </Card>

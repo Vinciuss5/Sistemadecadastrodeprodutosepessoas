@@ -4,12 +4,13 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Card, CardContent, CardHeader } from './ui/card'
 import { ArrowLeft, CheckCircle, Copy, AlertCircle } from 'lucide-react'
+import { createDonor } from '../utils/api'
 import type { Donor } from '../App'
 
 interface DonorRegistrationProps {
   onBack: () => void
-  onRegisterDonor: (donor: Omit<Donor, 'id' | 'donorCode'>) => Donor
-  onNext: () => void
+  onNext: (donor: Donor) => void
+  onRefresh: () => void
 }
 
 interface FormErrors {
@@ -19,7 +20,7 @@ interface FormErrors {
   cpf?: string
 }
 
-export function DonorRegistration({ onBack, onRegisterDonor, onNext }: DonorRegistrationProps) {
+export function DonorRegistration({ onBack, onNext, onRefresh }: DonorRegistrationProps) {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -29,6 +30,8 @@ export function DonorRegistration({ onBack, onRegisterDonor, onNext }: DonorRegi
   const [registeredDonor, setRegisteredDonor] = useState<Donor | null>(null)
   const [showSuccess, setShowSuccess] = useState(false)
   const [errors, setErrors] = useState<FormErrors>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [donorCodeAttempts, setDonorCodeAttempts] = useState(1)
 
   // Função para formatar telefone
   const formatPhone = (value: string) => {
@@ -183,15 +186,61 @@ export function DonorRegistration({ onBack, onRegisterDonor, onNext }: DonorRegi
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) {
       return
     }
 
-    const donor = onRegisterDonor(formData)
-    setRegisteredDonor(donor)
-    setShowSuccess(true)
-    console.log('Cadastro de doador:', donor)
+    setIsSubmitting(true)
+    let attempts = donorCodeAttempts
+    let success = false
+    
+    // Try up to 10 times to find an available code
+    while (attempts <= donorCodeAttempts + 10 && !success) {
+      try {
+        const donorCode = `DOA${String(attempts).padStart(3, '0')}`
+        
+        // Create donor via API
+        const response = await createDonor({
+          code: donorCode,
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          cpf: formData.cpf,
+          address: '' // Not used in this form
+        })
+
+        if (response.success && response.donor) {
+          const donor: Donor = {
+            id: response.donor.code,
+            donorCode: response.donor.code,
+            name: response.donor.name,
+            email: response.donor.email,
+            phone: response.donor.phone,
+            cpf: response.donor.cpf
+          }
+          
+          setRegisteredDonor(donor)
+          setShowSuccess(true)
+          setDonorCodeAttempts(attempts + 1)
+          onRefresh() // Refresh donor list
+          console.log('Cadastro de doador:', donor)
+          success = true
+        }
+      } catch (error: any) {
+        console.error(`Attempt ${attempts} failed:`, error.message)
+        // If it's a duplicate code error, try the next number
+        if (error.message.includes('já existe')) {
+          attempts++
+          continue
+        }
+        // For other errors, show message and stop
+        alert(error.message || 'Erro ao cadastrar doador. Por favor, tente novamente.')
+        break
+      }
+    }
+    
+    setIsSubmitting(false)
   }
 
   const copyDonorCode = () => {
@@ -202,17 +251,9 @@ export function DonorRegistration({ onBack, onRegisterDonor, onNext }: DonorRegi
   }
 
   const handleContinue = () => {
-    // Reset form
-    setFormData({
-      name: '',
-      email: '',
-      phone: '',
-      cpf: ''
-    })
-    setShowSuccess(false)
-    setRegisteredDonor(null)
-    setErrors({})
-    onNext()
+    if (registeredDonor) {
+      onNext(registeredDonor)
+    }
   }
 
   if (showSuccess && registeredDonor) {
@@ -395,9 +436,10 @@ export function DonorRegistration({ onBack, onRegisterDonor, onNext }: DonorRegi
         
         <Button 
           onClick={handleSubmit}
+          disabled={isSubmitting}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-md h-12"
         >
-          Cadastrar Doador
+          {isSubmitting ? 'Cadastrando...' : 'Cadastrar Doador'}
         </Button>
       </CardContent>
     </Card>

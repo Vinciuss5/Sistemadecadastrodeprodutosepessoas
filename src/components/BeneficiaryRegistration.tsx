@@ -4,11 +4,12 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Card, CardContent, CardHeader } from './ui/card'
 import { ArrowLeft, CheckCircle, Copy, AlertCircle, MapPin } from 'lucide-react'
+import { createBeneficiary } from '../utils/api'
 import type { Beneficiary } from '../App'
 
 interface BeneficiaryRegistrationProps {
   onBack: () => void
-  onRegisterBeneficiary: (beneficiary: Omit<Beneficiary, 'id' | 'beneficiaryCode'>) => Beneficiary
+  onRefresh: () => void
 }
 
 interface FormData {
@@ -38,7 +39,7 @@ interface FormErrors {
   zipCode?: string
 }
 
-export function BeneficiaryRegistration({ onBack, onRegisterBeneficiary }: BeneficiaryRegistrationProps) {
+export function BeneficiaryRegistration({ onBack, onRefresh }: BeneficiaryRegistrationProps) {
   const [formData, setFormData] = useState<FormData>({
     name: '',
     email: '',
@@ -56,6 +57,8 @@ export function BeneficiaryRegistration({ onBack, onRegisterBeneficiary }: Benef
   const [showSuccess, setShowSuccess] = useState(false)
   const [errors, setErrors] = useState<FormErrors>({})
   const [isLoadingCep, setIsLoadingCep] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [beneficiaryCodeAttempts, setBeneficiaryCodeAttempts] = useState(1)
 
   // Função para formatar telefone
   const formatPhone = (value: string) => {
@@ -314,15 +317,70 @@ export function BeneficiaryRegistration({ onBack, onRegisterBeneficiary }: Benef
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) {
       return
     }
 
-    const beneficiary = onRegisterBeneficiary(formData)
-    setRegisteredBeneficiary(beneficiary)
-    setShowSuccess(true)
-    console.log('Cadastro de beneficiário:', beneficiary)
+    setIsSubmitting(true)
+    let attempts = beneficiaryCodeAttempts
+    let success = false
+    
+    // Try up to 10 times to find an available code
+    while (attempts <= beneficiaryCodeAttempts + 10 && !success) {
+      try {
+        const beneficiaryCode = `BEN${String(attempts).padStart(3, '0')}`
+        
+        const address = `${formData.street}, ${formData.number}${formData.complement ? ` - ${formData.complement}` : ''}, ${formData.neighborhood}, ${formData.city}, ${formData.state}, CEP: ${formData.zipCode}`
+        
+        // Create beneficiary via API
+        const response = await createBeneficiary({
+          code: beneficiaryCode,
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          cpf: formData.cpf,
+          address
+        })
+
+        if (response.success && response.beneficiary) {
+          const beneficiary: Beneficiary = {
+            id: response.beneficiary.code,
+            beneficiaryCode: response.beneficiary.code,
+            name: response.beneficiary.name,
+            email: response.beneficiary.email,
+            phone: response.beneficiary.phone,
+            cpf: response.beneficiary.cpf,
+            street: formData.street,
+            number: formData.number,
+            complement: formData.complement,
+            neighborhood: formData.neighborhood,
+            city: formData.city,
+            state: formData.state,
+            zipCode: formData.zipCode
+          }
+          
+          setRegisteredBeneficiary(beneficiary)
+          setShowSuccess(true)
+          setBeneficiaryCodeAttempts(attempts + 1)
+          onRefresh() // Refresh beneficiary list
+          console.log('Cadastro de beneficiário:', beneficiary)
+          success = true
+        }
+      } catch (error: any) {
+        console.error(`Attempt ${attempts} failed:`, error.message)
+        // If it's a duplicate code error, try the next number
+        if (error.message.includes('já existe')) {
+          attempts++
+          continue
+        }
+        // For other errors, show message and stop
+        alert(error.message || 'Erro ao cadastrar beneficiário. Por favor, tente novamente.')
+        break
+      }
+    }
+    
+    setIsSubmitting(false)
   }
 
   const copyBeneficiaryCode = () => {
@@ -697,9 +755,10 @@ export function BeneficiaryRegistration({ onBack, onRegisterBeneficiary }: Benef
         
         <Button 
           onClick={handleSubmit}
+          disabled={isSubmitting}
           className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-md h-12"
         >
-          Cadastrar Beneficiário
+          {isSubmitting ? 'Cadastrando...' : 'Cadastrar Beneficiário'}
         </Button>
       </CardContent>
     </Card>
